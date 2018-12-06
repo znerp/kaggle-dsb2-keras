@@ -2,17 +2,22 @@ from __future__ import print_function
 
 import csv
 import numpy as np
+import os
 
 from model import get_model
 from utils import real_to_cdf, preprocess
 
 
-def load_validation_data():
+def load_validation_data(folder):
     """
     Load validation data from .npy files.
+
+    Params:
+
+    folder: folder containing the data to load
     """
-    X = np.load('data/X_validate.npy')
-    ids = np.load('data/ids_validate.npy')
+    X = np.load(os.path.join(folder, 'X_validate.npy'))
+    ids = np.load(os.path.join(folder, 'ids_validate.npy'))
 
     X = X.astype(np.float32)
     X /= 255
@@ -41,7 +46,7 @@ def accumulate_study_results(ids, prob):
     return sum_result
 
 
-def submission():
+def submission(weight_folder, save_folder, val_folder, data_folder):
     """
     Generate submission file for the trained models.
     """
@@ -50,16 +55,16 @@ def submission():
     model_diastole = get_model()
 
     print('Loading models weights...')
-    model_systole.load_weights('weights_systole_best.hdf5')
-    model_diastole.load_weights('weights_diastole_best.hdf5')
+    model_systole.load_weights(os.path.join(weight_folder, 'weights_systole_best.hdf5'))
+    model_diastole.load_weights(os.path.join(weight_folder, 'weights_diastole_best.hdf5'))
 
     # load val losses to use as sigmas for CDF
-    with open('val_loss.txt', mode='r') as f:
+    with open(os.path.join(save_folder, 'val_loss.txt'), mode='r') as f:
         val_loss_systole = float(f.readline())
         val_loss_diastole = float(f.readline())
 
     print('Loading validation data...')
-    X, ids = load_validation_data()
+    X, ids = load_validation_data(val_folder)
 
     print('Pre-processing images...')
     X = preprocess(X)
@@ -79,8 +84,8 @@ def submission():
 
     # write to submission file
     print('Writing submission to file...')
-    fi = csv.reader(open('data/sample_submission_validate.csv'))
-    f = open('submission.csv', 'w')
+    fi = csv.reader(open(os.path.join(data_folder, 'sample_submission_validate.csv')))
+    f = open(os.path.join(save_folder, 'submission.csv'), 'w')
     fo = csv.writer(f, lineterminator='\n')
     fo.writerow(fi.next())
     for line in fi:
@@ -100,4 +105,9 @@ def submission():
 
     print('Done.')
 
-submission()
+weight_folder = 
+save_folder = 
+val_folder = 
+data_folder = 
+
+submission(weight_folder, save_folder, val_folder, data_folder)
