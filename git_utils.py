@@ -1,10 +1,46 @@
-from __future__ import print_function
-
 import numpy as np
 from scipy.stats import norm
 from skimage.restoration import denoise_tv_chambolle
 from scipy import ndimage
 from keras.utils.generic_utils import Progbar
+import h5py
+
+
+def load_train_data(filename, seed=1):
+    """
+    Load training data from .h5py files.
+    """
+    with h5py.File(filename, 'r') as w:
+        X = w['image'].value
+        n_scalar = w['area_multiplier'].value
+        y = np.asarray([w['systole'].value, w['diastole'].value]) / n_scalar # concatenate systole and diastole and remove the area scalar since we dont have this in the images
+
+    X = X.astype(np.float32)
+    X /= 255
+
+    np.random.seed(seed)
+    np.random.shuffle(X)
+    np.random.seed(seed)
+    np.random.shuffle(y)
+
+    return X, y
+
+
+def split_data(X, y, split_ratio=0.2):
+    """
+    Split data into training and testing.
+
+    :param X: X
+    :param y: y
+    :param split_ratio: split ratio for train and test data
+    """
+    split = int(X.shape[0] * split_ratio)
+    X_test = X[:split, :, :, :]
+    y_test = y[:split, :]
+    X_train = X[split:, :, :, :]
+    y_train = y[split:, :]
+
+    return X_train, y_train, X_test, y_test
 
 
 def crps(true, pred):
@@ -41,7 +77,7 @@ def preprocess(X):
 
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
-            X[i, j] = denoise_tv_chambolle(X[i, j], weight=0.1, multichannel=False)
+            X[i, j] = denoise_tv_chambolle(X[i, j], weight=0.1, multichannel=False) # total variation denoising; something about the indexing is deprecated
         progbar.add(1)
     return X
 
