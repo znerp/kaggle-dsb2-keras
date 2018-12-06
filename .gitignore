@@ -4,3 +4,4 @@ data/
 *.npy
 *.hdf5
 *.txt
+.vscode
