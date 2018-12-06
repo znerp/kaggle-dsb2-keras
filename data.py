@@ -1,17 +1,21 @@
-from __future__ import print_function
+### Original file from GitHub keras tutorial for converting dicom images to training/validation set
 
 import os
 import numpy as np
-import dicom
-from scipy.misc import imresize
+import pydicom as dicom
+from scipy.misc import imresize # interpolation to up- or downsize images
+# from skimage.transform import resize  
 
 img_resize = True
 img_shape = (64, 64)
 
+input_folder = 'data'
+save_folder = 'data'
 
-def crop_resize(img):
+
+def crop_resize(img, img_shape=(64,64)):
     """
-    Crop center and resize.
+    Crop image to square image from center and resizes it.
 
     :param img: image to be cropped and resized.
     """
@@ -21,7 +25,7 @@ def crop_resize(img):
     short_edge = min(img.shape[:2])
     yy = int((img.shape[0] - short_edge) / 2)
     xx = int((img.shape[1] - short_edge) / 2)
-    crop_img = img[yy: yy + short_edge, xx: xx + short_edge]
+    crop_img = img[yy: yy + short_edge, xx: xx + short_edge]# convert image into square format
     img = crop_img
     img = imresize(img, img_shape)
     return img
@@ -100,7 +104,7 @@ def load_images(from_dir, verbose=True):
         pass
 
     print('-'*50)
-    print('All DICOM in {0} images loaded.'.format(from_dir))
+    print('All DICOM images in {0} loaded.'.format(from_dir))
     print('-'*50)
 
     current_study_images.append(images)
@@ -116,7 +120,7 @@ def map_studies_results():
     Maps studies to their respective targets.
     """
     id_to_results = dict()
-    train_csv = open('data/train.csv')
+    train_csv = open(os.path.join(input_folder, 'train.csv'))
     lines = train_csv.readlines()
     i = 0
     for item in lines:
@@ -137,7 +141,7 @@ def write_train_npy():
     print('Writing training data to .npy file...')
     print('-'*50)
 
-    study_ids, images = load_images('data/train')  # load images and their ids
+    study_ids, images = load_images(os.path.join(input_folder, 'train'))  # load images and their ids
     studies_to_results = map_studies_results()  # load the dictionary of studies to targets
     X = []
     y = []
@@ -151,8 +155,8 @@ def write_train_npy():
 
     X = np.array(X, dtype=np.uint8)
     y = np.array(y)
-    np.save('data/X_train.npy', X)
-    np.save('data/y_train.npy', y)
+    np.save(os.path.join(save_folder, 'X_train.npy'), X)
+    np.save(os.path.join(save_folder, 'y_train.npy'), y)
     print('Done.')
 
 
@@ -164,7 +168,7 @@ def write_validation_npy():
     print('Writing validation data to .npy file...')
     print('-'*50)
 
-    ids, images = load_images('data/validate')
+    ids, images = load_images(os.path.join(input_folder, 'validate'))
     study_ids = []
     X = []
 
@@ -175,10 +179,16 @@ def write_validation_npy():
             X.append(study[i, :, :, :])
 
     X = np.array(X, dtype=np.uint8)
-    np.save('data/X_validate.npy', X)
-    np.save('data/ids_validate.npy', study_ids)
+    np.save(os.path.join(save_folder, 'X_validate.npy'), X)
+    np.save(os.path.join(save_folder, 'ids_validate.npy'), study_ids)
     print('Done.')
 
-
+import time
+t0 = time.time()
 write_train_npy()
+t1 = time.time()
+print('Training data finished in {:.2f} seconds.'.format(t1-t0))
 write_validation_npy()
+t2 = time.time()
+print('Training data finished in {:.2f} seconds.'.format(t2-t1))
+print('Total time elapsed: {:.2f} seconds.'.format(t2-t0))
