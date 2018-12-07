@@ -3,6 +3,7 @@
 # This training file originally comes from the GitHub keras tutorial
 import sys
 import os
+import time
 import numpy as np
 from keras.preprocessing.image import ImageDataGenerator
 
@@ -13,14 +14,13 @@ from git_utils import crps, real_to_cdf, preprocess, rotation_augmentation, shif
 data_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\data'
 save_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\model'
 
-# Parameters for training loop
-nb_iter = 200
+# Hyperparameters (implement in smart way)
+# hypers = {'nb_iter': 100, 'epochs_per_iter': 1, 'batch_size': 32, 'calc_crps': 0}
+# train_set_size = 1000 # first test with smaller subset
+nb_iter = 100
 epochs_per_iter = 1
 batch_size = 32
 calc_crps = 0
-train_set_size = 500 # first test with smaller subset
-
-
 
 
 print('Loading and compiling models...')
@@ -28,10 +28,11 @@ model_systole = get_model()
 model_diastole = get_model()
 
 print('Loading training data...')
-filename = os.path.join(data_folder,'train_mri_64_64_sub100.h5')
+filename = os.path.join(data_folder,'train_mri_64_64.h5')
 X, y = load_train_data(filename)
 y = y.T
 
+train_set_size = X.shape[0]
 # test with smaller dataset
 X = X[:train_set_size,:,:,:]
 y = y[:train_set_size,:]
@@ -44,6 +45,7 @@ X_train, y_train, X_test, y_test = split_data(X, y, split_ratio=0.2)
 
 
 ### Actual training
+t_start = time.time()
 
 # remember min val. losses (best iterations), used as sigmas for submission
 min_val_loss_systole = sys.float_info.max
@@ -52,6 +54,9 @@ min_val_loss_diastole = sys.float_info.max
 print('-'*50)
 print('Training...')
 print('-'*50)
+
+# store losses (training and validation; systole and diastole) on every iteration to evaluate learning progress 
+loss = {'train': [], 'val': []}
 
 for i in range(nb_iter):
     print('-'*50)
@@ -76,6 +81,10 @@ for i in range(nb_iter):
     loss_diastole = hist_diastole.history['loss'][-1]
     val_loss_systole = hist_systole.history['val_loss'][-1]
     val_loss_diastole = hist_diastole.history['val_loss'][-1]
+
+    # store loss values for: train, val <-> systole, diastole
+    loss['train'].append([loss_systole, loss_diastole])
+    loss['val'].append([val_loss_systole, val_loss_diastole])
 
     if calc_crps > 0 and i % calc_crps == 0:
         print('Evaluating CRPS...')
@@ -102,23 +111,28 @@ for i in range(nb_iter):
         crps_test = crps(cdf_test, np.concatenate((cdf_val_pred_systole, cdf_val_pred_diastole)))
         print('CRPS(test) = {0}'.format(crps_test))
 
-    print('Saving weights...')
-    # save weights so they can be loaded later
-    model_systole.save_weights(os.path.join(save_folder, 'weights_systole.hdf5'), overwrite=True)
-    model_diastole.save_weights(os.path.join(save_folder, 'weights_diastole.hdf5'), overwrite=True)
-
+    
     # for best (lowest) val losses, save weights
     if val_loss_systole < min_val_loss_systole:
+        print('Systole loss reduced. Saving weights...')
         min_val_loss_systole = val_loss_systole
         model_systole.save_weights(os.path.join(save_folder, 'weights_systole_best.hdf5'), overwrite=True)
 
     if val_loss_diastole < min_val_loss_diastole:
+        print('Diastole loss reduced. Saving weights...')
         min_val_loss_diastole = val_loss_diastole
         model_diastole.save_weights(os.path.join(save_folder, 'weights_diastole_best.hdf5'), overwrite=True)
 
-    # save best (lowest) val losses in file (to be later used for generating submission)
-    with open(os.path.join(save_folder, 'val_loss.txt'), mode='w+') as f:
-        f.write(str(min_val_loss_systole))
-        f.write('\n')
-        f.write(str(min_val_loss_diastole))
 
+# save best (lowest) val losses in file (to be later used for generating submission)
+with open(os.path.join(save_folder, 'val_loss_all.txt'), mode='w+') as f:
+    f.write('train-sys\ttrain-dia\tval-sys\tval-dia\n')
+    for i in range(nb_iter):
+        f.write('{}\t{}\t{}\t{}\n'.format(loss['train'][i][0], loss['train'][i][1], loss['val'][i][0], loss['val'][i][1]))
+
+# save hyperparameters as well
+
+
+t_end = time.time()
+
+print('Done with training the CNN with {} sets of images. Total time elapsed is {}.'.format(train_set_size, t_end-t_start))
