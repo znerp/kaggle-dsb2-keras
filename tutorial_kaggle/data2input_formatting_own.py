@@ -84,7 +84,7 @@ sel_patients = np.random.choice(np.arange(1,501), N_PATIENTS)
 all_series = []
 failedPatients = []
 it=1
-print('Starting loop for data read-in of {} patients.'.format(N_PATIENTS))
+print('Starting loop for data read-in of {0} patients at image resolution of {1}x{1} pixels.'.format(N_PATIENTS, X_DIM))
 start = time()
 for patient in sel_patients: # process patient unless error; in this case save patient and error message
     patient_dir = os.path.join(ALL_PATIENTS_DIR, str(patient))

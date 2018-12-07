@@ -1,4 +1,5 @@
 ### Original file from GitHub keras tutorial for converting dicom images to training/validation set
+# has not been used so far (instead, the raw data is processed via a class DatasetSAX like in the kaggle tutorial)
 
 import os
 import numpy as np
