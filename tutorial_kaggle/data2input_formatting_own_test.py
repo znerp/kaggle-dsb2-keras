@@ -1,3 +1,6 @@
+### used to process the raw data and bring it into a format the neural network can use for training/predictions
+# script is based on kaggle tutorial https://www.kaggle.com/kmader/mri-heart-processing 
+
 #%% import section
 import numpy as np
 import os
@@ -7,55 +10,45 @@ from matplotlib import image
 import matplotlib.pyplot as plt
 import argparse
 
-
 pathToUtils = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\tutorial_kaggle\\utils'
 sys.path.insert(1, pathToUtils)
 from classes import DatasetSAX
 from functions import rezoom, read_and_process
 
-#%%
-# print(read_and_process.__doc__) # print documentation of loaded module
 
-#%%
-# number of bins to use in histogram for gaussian regression
-NUM_BINS = 100
-# number of standard deviatons past which we will consider a pixel an outlier
-STD_MULTIPLIER = 2
-# number of points of our interpolated dataset to consider when searching for
-# a threshold value; the function by default is interpolated over 1000 points,
-# so 250 will look at the half of the points that is centered around the known
-# myocardium pixel
-THRESHOLD_AREA = 250
-# number of pixels on the line within which to search for a connected component
-# in a thresholded image, increase this to look for components further away
-COMPONENT_INDEX_TOLERANCE = 20
-# number of angles to search when looking for the correct orientation
-ANGLE_SLICES = 36
-X_DIM, Y_DIM = 64, 64
+#%% some metavariables
+X_DIM, Y_DIM = 64, 64 # 96,96 
 # X_DIM, Y_DIM = 128, 128
 T_DIM = 30
-# how many patients are processed (maximally 500)
+# how many patients are processed (maximally 200 for validation)
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('-n', dest='n', type=int, default=500)
+    parser.add_argument('-n', dest='n', type=int, default=440)
     args = parser.parse_args()
 
     N_PATIENTS = args.n
 else:
-    N_PATIENTS = 500
+    N_PATIENTS = 440
 
 DATA_DIR = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\data'
-ALL_PATIENTS_DIR =  os.path.join(DATA_DIR, 'train', 'train')
-TRAIN_FILE = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\data\\train.csv'
+ALL_PATIENTS_DIR =  os.path.join(DATA_DIR, 'test', 'test') 
 
 
-#print(N_PATIENTS)
-CD = os.getcwd()
-if N_PATIENTS == 500:
-    SAVENAME = os.path.join(DATA_DIR, 'train_mri_{}_{}.h5'.format(X_DIM, Y_DIM))
-else:
-    SAVENAME = os.path.join(DATA_DIR, 'train_mri_{}_{}_sub{}.h5'.format(X_DIM, Y_DIM, N_PATIENTS))
-print('Savename is ' + SAVENAME + ('.\nProcessing {} patients.'.format(N_PATIENTS)))
+# checks for file overwrite
+SAVENAME = os.path.join(DATA_DIR, 'test', 'test_mri_{}_{}_N{}.h5'.format(X_DIM, Y_DIM, N_PATIENTS))
+if os.path.isfile(SAVENAME):
+    print('Savename is ' + SAVENAME + (' and {}.\nProcessing {} patients.'.format('already exists.', N_PATIENTS)))
+else: 
+    print('Savename is ' + SAVENAME + (' and {}.\nProcessing {} patients.'.format('does not exist yet.', N_PATIENTS)))
+
+fail_name = os.path.join(DATA_DIR, 'test', 'failedPatients_test_N{}.csv'.format(N_PATIENTS))
+if os.path.isfile(fail_name):
+    overwrite = input('Code execution would lead to overwrite of  {}. Shoult it really be overwritten?\n [y/n] '.format(fail_name))
+    if overwrite != 'y':
+        raise Exception('Files will not be overwritten.')
+
+
+
 
 #%%
 # print(np.random.choice.__doc__)
@@ -79,7 +72,7 @@ from time import time
 all_patient_dirs = os.listdir(ALL_PATIENTS_DIR)
 # progbar = Progbar(len(base_path))
 np.random.seed(17)
-sel_patients = np.random.choice(np.arange(1,501), N_PATIENTS)
+sel_patients = np.random.choice(np.arange(701,1141), N_PATIENTS)
 
 all_series = []
 failedPatients = []
@@ -130,29 +123,23 @@ print('Shape of path stack: ' + str(path_stack.shape))
 time_stack = np.concatenate([ [x[1]]*x[-1].shape[0] for x in all_img_data if x is not None],0)
 print('Shape of time stack: ' + str(time_stack.shape))
 
-#%%
-import pandas as pd
-train_file = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\data\\train.csv'
-train_targets = {int(k['Id']): k for k in pd.read_csv(train_file).T.to_dict().values()}
 
 #%% save
 import h5py
 print('Saving processed data...')
 with h5py.File(SAVENAME, 'w') as w:
     w.create_dataset('image', data = im_stack, compression = 9)
-    w.create_dataset('systole', data = [train_targets[int(c_id)]['Systole'] for c_id in path_stack])
-    w.create_dataset('diastole', data = [train_targets[int(c_id)]['Diastole'] for c_id in path_stack])
     w.create_dataset('id', data = [int(c_id) for c_id in path_stack])
     w.create_dataset('area_multiplier', data = am_stack)
     w.create_dataset('time', data = time_stack)
 print('Done.')
 
-#%% 
+#%% save failed patients
 import csv
 print('Saving erroneous patients...')
-with open(os.path.join(DATA_DIR, 'failed.csv'), 'w') as csvfile:
+
+with open(fail_name, 'w') as csvfile:
     for item in failedPatients:
         # print(str(item))
         csvfile.write(str(item) + '\n')
 print('Done.')
-#%%
