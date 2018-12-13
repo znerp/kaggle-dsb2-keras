@@ -5,3 +5,5 @@ data/
 *.hdf5
 *.txt
 .vscode
+__pycache__
+*/__pycache__
