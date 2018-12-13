@@ -2,6 +2,8 @@ import pydicom as dicom
 import re
 import os
 import numpy as np
+import warnings
+from scipy.ndimage import zoom
 
 # only deals with the SAX images!
 class DatasetSAX(object): 
@@ -42,7 +44,7 @@ class DatasetSAX(object):
         slices = []
         for s in subdirs: # gets the SAX slices of the patient
             m = re.match("sax_(\d+)", s)
-            if m is not None:
+            if m is not None: # --> pattern is matched
                 slices.append(int(m.group(1)))
 
         slices_map = {}
@@ -75,9 +77,22 @@ class DatasetSAX(object):
     def _filename(self, s, t): # s = slice, t = time
         return os.path.join(self.directory,"sax_%d" % s, "IM-%04d-%04d.dcm" % (self.slices_map[s], t))
 
-    def _read_dicom_image(self, filename):
+    def _read_dicom_image(self, filename, resize=False, resize_dims=None):
+        """
+        Reads in the dicom image specified by filename. 
+
+        Params:
+        resize: boolean that indicates if the image should be resized to resize_dims before return
+        resize_dims: possible new size of the image if "resize" is indicated as true
+        """
         d = dicom.read_file(filename)
         img = d.pixel_array # pixel_array contains the pixels, ergo the image 
+        if resize:
+            # print(np.array(resize_dims)/img.shape)
+            img = zoom(img, np.array(resize_dims)/img.shape)
+        elif img.shape[0] < img.shape[1]: # insurance against rotated images; width < height might indicate rotation
+            img = img.T
+        print(img.shape)
         return np.array(img)
 
     def _read_all_dicom_images(self):
@@ -97,9 +112,24 @@ class DatasetSAX(object):
             except AttributeError:
                 dist = 8  # better than nothing...
 
-        self.images = np.array([[self._read_dicom_image(self._filename(d, i))
-                                 for i in self.time]
-                                for d in self.slices]) # all time steps should have the same slices, right?
+        # print(self.time)
+        # print(self.slices)
+        try:
+            self.images = np.array([[self._read_dicom_image(self._filename(d, i))
+                                    for i in self.time]
+                                    for d in self.slices]) # all slices should contain all time steps, right? 
+        except ValueError as ve: # for the case that different images have different shapes
+            warnings.warn('Warning "{}" handled.'.format(ve))
+            m = re.match('.*([0-9]{3})\,([0-9]{3}).*', str(ve)) 
+            re_dims = [int(m.group(1)), int(m.group(2))]
+            self.images = np.array([[self._read_dicom_image(self._filename(d, i), resize=True, resize_dims=re_dims)
+                                    for i in self.time]
+                                    for d in self.slices])
+
+        if len(self.images.shape) != 4: # not a 4-D array -> no read in correctly
+            self.images = np.array([[self._read_dicom_image(self._filename(d, i), resize=True, resize_dims=[128,128])
+                                        for i in self.time]
+                                        for d in self.slices])
         self.dist = dist
         self.area_multiplier = x * y
         self.metadata = {"PatientAge": d1.PatientAge, "PatientBirthDate": d1.PatientBirthDate, "PatientName": d1.PatientName, 
