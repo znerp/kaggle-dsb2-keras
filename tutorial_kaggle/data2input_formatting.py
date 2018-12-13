@@ -1,4 +1,7 @@
-"""Is closer to the original from the kaggle tutorial (use of dbag which seems 
+"""
+# used to process the raw data and bring it into a format the neural network can use for training/predictions
+# script is based on kaggle tutorial https://www.kaggle.com/kmader/mri-heart-processing 
+Is closer to the original version than data2input_formatting_own.py (use of dbag which seems 
 to be quite a bit faster than my implemented for loop; however, it does not save the 
 patients that cannot be processed.)
 """
