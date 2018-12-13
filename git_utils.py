@@ -63,7 +63,7 @@ def real_to_cdf(y, sigma=1e-10):
     """
     cdf = np.zeros((y.shape[0], 600))
     for i in range(y.shape[0]):
-        cdf[i] = norm.cdf(np.linspace(0, 599, 600), y[i], sigma)
+        cdf[i,:] = norm.cdf(np.linspace(0, 599, 600), y[i], sigma) # in this case linspace could be replaced by np.arange(600)
     return cdf
 
 

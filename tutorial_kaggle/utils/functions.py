@@ -11,7 +11,7 @@ def rezoom(in_data, t_dim=30, x_dim=128, y_dim=128):
                                     y_dim/in_data.images.shape[3]])
 
 
-def read_and_process(in_path, t_dim=30, x_dim=128, y_dim=128, withErrCatch=False): # reads data in with pre-defined function and scales it to 128x128
+def read_and_process(in_path, t_dim, x_dim, y_dim, withErrCatch=False): # reads data in with pre-defined function and scales it to 128x128
     """Function that creates an object of the DatasetSAX class and processes it further.
     Zooms every image to the size t_dim*x_dim*y_dim.
     
@@ -37,7 +37,7 @@ def read_and_process(in_path, t_dim=30, x_dim=128, y_dim=128, withErrCatch=False
                 zoom_time = zoom(cur_data.time, [t_dim/len(cur_data.time)]) 
             else:
                 zoom_time = range(t_dim)
-            return [in_path, zoom_time, cur_data.area_multiplier, rezoom(cur_data, t_dim=30, x_dim=128, y_dim=128)] # scale single images to size (?,30,128,128)
+            return [in_path, zoom_time, cur_data.area_multiplier, rezoom(cur_data, t_dim, x_dim, y_dim)] # scale single images to size (?,30,128,128)
             #return {'path': in_path, 'time': zoom_time, 'area': cur_data.area_multiplier, 'images': rezoom(cur_data, t_dim=30, x_dim=128, y_dim=128)} 
         except Exception as e: # catches exceptions without letting them stop the code
             warn('{}'.format(e), RuntimeWarning)
