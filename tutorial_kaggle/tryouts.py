@@ -10,3 +10,9 @@ ret3,ret4 = testfunction(2,3)
 
 #print(ret1, ret2)
 #print(ret3)
+
+text = input('Gimme gimme numbers separated by blanks.\n')
+
+print('And back they come!')
+for number in text.split():
+    print(number)
