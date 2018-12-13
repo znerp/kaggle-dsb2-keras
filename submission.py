@@ -1,28 +1,29 @@
-from __future__ import print_function
-
 import csv
 import numpy as np
 import os
+import h5py
 
+import sys
+sys.path.insert(1, 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\model')
 from model import get_model
-from utils import real_to_cdf, preprocess
+from git_utils import real_to_cdf, preprocess
 
 
-def load_validation_data(folder):
+def load_validation_data(filename):
     """
-    Load validation data from .npy files.
-
-    Params:
-
-    folder: folder containing the data to load
+    Loads validation data from .h5py files.
     """
-    X = np.load(os.path.join(folder, 'X_validate.npy'))
-    ids = np.load(os.path.join(folder, 'ids_validate.npy'))
+    with h5py.File(filename, 'r') as w:
+        X = w['image'].value
+        ids = w['id'].value
+        area_mult = w['area_multiplier'].value
+
+    a_correct = np.reshape(area_mult, (area_mult.shape[0], 1))
 
     X = X.astype(np.float32)
     X /= 255
 
-    return X, ids
+    return X, ids, a_correct
 
 
 def accumulate_study_results(ids, prob):
@@ -45,69 +46,80 @@ def accumulate_study_results(ids, prob):
         sum_result[i][:] /= cnt_result[i]
     return sum_result
 
+# metavariables
+N_PATIENTS = 200
+weight_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\model'
+data_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\data'
+val_folder = os.path.join(data_folder, 'validate') 
+submission_folder = os.path.join(data_folder, 'submission') 
+val_file = os.path.join(val_folder, 'validate_mri_64_64_N{}.h5'.format(N_PATIENTS))
 
-def submission(weight_folder, save_folder, val_folder, data_folder):
-    """
-    Generate submission file for the trained models.
-    """
-    print('Loading and compiling models...')
-    model_systole = get_model()
-    model_diastole = get_model()
+print('Starting prediction and submission for ' + str(N_PATIENTS) + ' Patients.')
 
-    print('Loading models weights...')
-    model_systole.load_weights(os.path.join(weight_folder, 'weights_systole_best.hdf5'))
-    model_diastole.load_weights(os.path.join(weight_folder, 'weights_diastole_best.hdf5'))
+subm_file = os.path.join(submission_folder, 'submission.csv')
+if os.path.isfile(subm_file):
+    overwrite = input('Do you really want to overwrite {}? [y/n]'.format(subm_file))
+    if overwrite != 'y':
+        raise RuntimeError('Code stopped. File will not be overwritten.')
 
-    # load val losses to use as sigmas for CDF
-    with open(os.path.join(save_folder, 'val_loss.txt'), mode='r') as f:
-        val_loss_systole = float(f.readline())
-        val_loss_diastole = float(f.readline())
+print('Loading and compiling models...')
+model_systole = get_model()
+model_diastole = get_model()
 
-    print('Loading validation data...')
-    X, ids = load_validation_data(val_folder)
+print('Loading models weights...')
+model_systole.load_weights(os.path.join(weight_folder, 'weights_systole_best.hdf5'))
+model_diastole.load_weights(os.path.join(weight_folder, 'weights_diastole_best.hdf5'))
 
-    print('Pre-processing images...')
-    X = preprocess(X)
+# load val losses to use as sigmas for CDF
+with open(os.path.join(weight_folder, 'val_loss.txt'), mode='r') as f:
+    val_loss_systole = float(f.readline())
+    val_loss_diastole = float(f.readline())
 
-    batch_size = 32
-    print('Predicting on validation data...')
-    pred_systole = model_systole.predict(X, batch_size=batch_size, verbose=1)
-    pred_diastole = model_diastole.predict(X, batch_size=batch_size, verbose=1)
+print('Loading validation data...')
+X, ids, a_correct = load_validation_data(val_file) 
 
-    # real predictions to CDF
-    cdf_pred_systole = real_to_cdf(pred_systole, val_loss_systole)
-    cdf_pred_diastole = real_to_cdf(pred_diastole, val_loss_diastole)
+print('Pre-processing images...')
+X = preprocess(X)
 
-    print('Accumulating results...')
-    sub_systole = accumulate_study_results(ids, cdf_pred_systole)
-    sub_diastole = accumulate_study_results(ids, cdf_pred_diastole)
+batch_size = 32
+print('Predicting on validation data...')
+pred_systole = model_systole.predict(X, batch_size=batch_size, verbose=1)
+pred_diastole = model_diastole.predict(X, batch_size=batch_size, verbose=1)
+# correction for area multiplier required 
+pred_systole = pred_systole * a_correct
+pred_diastole = pred_diastole * a_correct
 
-    # write to submission file
-    print('Writing submission to file...')
-    fi = csv.reader(open(os.path.join(data_folder, 'sample_submission_validate.csv')))
-    f = open(os.path.join(save_folder, 'submission.csv'), 'w')
-    fo = csv.writer(f, lineterminator='\n')
-    fo.writerow(fi.next())
-    for line in fi:
+# real predictions to CDF
+cdf_pred_systole = real_to_cdf(y=pred_systole, sigma=val_loss_systole)
+cdf_pred_diastole = real_to_cdf(pred_diastole, val_loss_diastole)
+
+print('Accumulating results...')
+sub_systole = accumulate_study_results(ids, cdf_pred_systole)
+sub_diastole = accumulate_study_results(ids, cdf_pred_diastole)
+
+# write to submission file
+print('Writing submission to file...')
+fi = csv.reader(open(os.path.join(submission_folder, 'sample_submission_validate.csv')))
+f = open(os.path.join(submission_folder, 'submission.csv'), 'w')
+fo = csv.writer(f, lineterminator='\n')
+# next(fi) # skip first line as it is basically a header
+
+for it,line in enumerate(fi):
+    if it == 0:
+        fo.writerow(line)
+    else:
         idx = line[0]
         key, target = idx.split('_')
         key = int(key)
         out = [idx]
         if key in sub_systole:
             if target == 'Diastole':
-                out.extend(list(sub_diastole[key][0]))
+                out.extend(list(sub_diastole[key][0])) # like append, but extends a list by another list instead of a single element(which could also be a list --> list within a list)
             else:
                 out.extend(list(sub_systole[key][0]))
         else:
             print('Miss {0}'.format(idx))
         fo.writerow(out)
-    f.close()
+f.close()
 
-    print('Done.')
-
-weight_folder = 
-save_folder = 
-val_folder = 
-data_folder = 
-
-submission(weight_folder, save_folder, val_folder, data_folder)
+print('Done.')
