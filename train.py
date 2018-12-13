@@ -6,29 +6,41 @@ import os
 import time
 import numpy as np
 from keras.preprocessing.image import ImageDataGenerator
+from keras import optimizers
+import h5py
 
 sys.path.insert(1, 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\model')
-from model import get_model
+from modelv01 import get_model
 from git_utils import crps, real_to_cdf, preprocess, rotation_augmentation, shift_augmentation, load_train_data, split_data
 
-data_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\data'
-save_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\model'
+data_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\data\\train'
+save_folder = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\training_results\\' + time.strftime('%Y%m%d_%H%M')
+
+# create a new folder named after current date and time to save all model parameters and infos regarding the training process
+os.makedirs(save_folder)
 
 # Hyperparameters (implement in smart way)
-# hypers = {'nb_iter': 100, 'epochs_per_iter': 1, 'batch_size': 32, 'calc_crps': 0}
+hypers = {'model': 'modelv01',
+'optimizer': 'Adam',
+'lr_alpha': 1e-4, 
+'nb_iter': 100, 
+'epochs_per_iter': 1, 
+'batch_size': 32, 
+'calc_crps': 0}
 # train_set_size = 1000 # first test with smaller subset
-nb_iter = 100
-epochs_per_iter = 1
-batch_size = 32
-calc_crps = 0
 
 
 print('Loading and compiling models...')
 model_systole = get_model()
 model_diastole = get_model()
+model_systole.summary()
+time.sleep(1000)
+
+# optimizer = Adam
+# modelv01.compile(optimizer=hypers['optimizer'], loss=root_mean_squared_error)
 
 print('Loading training data...')
-filename = os.path.join(data_folder,'train_mri_64_64.h5')
+filename = os.path.join(data_folder,'train_mri_64_64_N500.h5')
 X, y = load_train_data(filename)
 y = y.T
 
@@ -58,9 +70,9 @@ print('-'*50)
 # store losses (training and validation; systole and diastole) on every iteration to evaluate learning progress 
 loss = {'train': [], 'val': []}
 
-for i in range(nb_iter):
+for i in range(hypers['nb_iter']):
     print('-'*50)
-    print('Iteration {0}/{1}'.format(i + 1, nb_iter))
+    print('Iteration {0}/{1}'.format(i + 1, hypers['nb_iter']))
     print('-'*50)
 
     print('Augmenting images - rotations')
@@ -69,11 +81,11 @@ for i in range(nb_iter):
     X_train_aug = shift_augmentation(X_train_aug, 0.1, 0.1)
 
     print('Fitting systole model...')
-    hist_systole = model_systole.fit(X_train_aug, y_train[:, 0], batch_size=batch_size, epochs=epochs_per_iter, verbose = 2,
+    hist_systole = model_systole.fit(X_train_aug, y_train[:, 0], batch_size=hypers['batch_size'], epochs=hypers['epochs_per_iter'], verbose = 2,
                                         validation_data=(X_test, y_test[:,0]), shuffle = True) 
 
     print('Fitting diastole model...')
-    hist_diastole = model_diastole.fit(X_train_aug, y_train[:, 1], batch_size=batch_size, epochs=epochs_per_iter, verbose = 2,
+    hist_diastole = model_diastole.fit(X_train_aug, y_train[:, 1], batch_size=hypers['batch_size'], epochs=hypers['epochs_per_iter'], verbose = 2,
                                         validation_data=(X_test, y_test[:,1]), shuffle = True) 
 
     # sigmas for predicted data, actually loss function values (RMSE)
@@ -86,12 +98,12 @@ for i in range(nb_iter):
     loss['train'].append([loss_systole, loss_diastole])
     loss['val'].append([val_loss_systole, val_loss_diastole])
 
-    if calc_crps > 0 and i % calc_crps == 0:
+    if hypers['calc_crps'] > 0 and i % hypers['calc_crps'] == 0:
         print('Evaluating CRPS...')
-        pred_systole = model_systole.predict(X_train, batch_size=batch_size, verbose=1)
-        pred_diastole = model_diastole.predict(X_train, batch_size=batch_size, verbose=1)
-        val_pred_systole = model_systole.predict(X_test, batch_size=batch_size, verbose=1)
-        val_pred_diastole = model_diastole.predict(X_test, batch_size=batch_size, verbose=1)
+        pred_systole = model_systole.predict(X_train, batch_size=hypers['batch_size'], verbose=1)
+        pred_diastole = model_diastole.predict(X_train, batch_size=hypers['batch_size'], verbose=1)
+        val_pred_systole = model_systole.predict(X_test, batch_size=hypers['batch_size'], verbose=1)
+        val_pred_diastole = model_diastole.predict(X_test, batch_size=hypers['batch_size'], verbose=1)
 
         # CDF for train and test data (actually a step function)
         cdf_train = real_to_cdf(np.concatenate((y_train[:, 0], y_train[:, 1])))
@@ -124,15 +136,36 @@ for i in range(nb_iter):
         model_diastole.save_weights(os.path.join(save_folder, 'weights_diastole_best.hdf5'), overwrite=True)
 
 
-# save best (lowest) val losses in file (to be later used for generating submission)
+t_end = time.time()
+t_delta = t_end-t_start
+
+print('Done with training the CNN with {} sets of images. Total time elapsed is {} min.'.format(train_set_size, t_delta/60))
+
+
+print('*'*50)
+print('Saving Losses and Hyperparameters.')
+print('*'*50)
+# save best (lowest) val losses in readable file (to be later used for generating submission)
 with open(os.path.join(save_folder, 'val_loss_all.txt'), mode='w+') as f:
     f.write('train-sys\ttrain-dia\tval-sys\tval-dia\n')
-    for i in range(nb_iter):
+    for i in range(hypers['nb_iter']):
         f.write('{}\t{}\t{}\t{}\n'.format(loss['train'][i][0], loss['train'][i][1], loss['val'][i][0], loss['val'][i][1]))
 
-# save hyperparameters as well
+# save hyperparameters to readable file
+with open(os.path.join(save_folder, 'hyperparameters.txt'), mode='w+') as g:
+    for key,val in hypers.items():
+        g.write('{}: {}\n'.format(key, val))
+
+# save losses and hyperparameters in additional h5py.file
+with h5py.File(os.path.join(save_folder, 'metadata.h5'), 'w') as h:
+    grp1 = h.create_group('hparms')
+    for key,val in hypers.items():
+        # print([key,val])
+        grp1.create_dataset(key, data = val)
+    grp2 = h.create_group('losses')
+    for key,val in loss.items():
+        grp2.create_dataset(key, data = val)
+    grp3 = h.create_group('misc')
+    grp3.create_dataset('duration', data = t_delta)
 
 
-t_end = time.time()
-
-print('Done with training the CNN with {} sets of images. Total time elapsed is {}.'.format(train_set_size, t_end-t_start))
