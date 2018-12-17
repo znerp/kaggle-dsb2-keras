@@ -9,6 +9,7 @@ from keras.preprocessing.image import ImageDataGenerator
 from keras import optimizers
 # import h5py
 import json
+import csv
 
 import sys
 sys.path.insert(1, 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\model')
@@ -25,12 +26,12 @@ hypers = {'model': 'modelv02',
 'post-processing': False,
 'data_augment': False,
 'keep_prob': 1,
-'nb_iter': 400, 
+'nb_iter': 500, 
 'epochs_per_iter': 1, 
-'batch_size': 64, # memory of GPU too low for 256? 
+'batch_size': 128, # memory of GPU too low for 256? 
 'calc_crps': 0,
-'m': 500, # number of training examples trained on
-'rnd_seed': 176
+'m': 3000, # number of training examples trained on
+'rnd_seed': 176,
 'image_size': [64,64]} 
 
 
@@ -74,6 +75,12 @@ if hypers['pre-processing'] != False: # no pre-processing for now
 # split to training and test
 X_train, y_train, X_test, y_test = split_data(X, y, split_ratio=0.2)
 
+# create a new folder named after current date and time to save all model parameters and infos regarding the training process
+os.makedirs(save_folder)
+# save losses and hyperparameters in json file
+metadict = {'hparms': hypers, 'losses': None, 'duration': None}
+with open(os.path.join(save_folder, 'metadata.json'), 'w') as jf:
+    json.dump(metadict, jf)
 
 ### Actual training
 t_start = time.time()
@@ -87,7 +94,8 @@ print('Training...')
 print('-'*50)
 
 # store losses (training and validation; systole and diastole) on every iteration to evaluate learning progress 
-loss = {'train': [], 'val': []}
+loss = {'train': {'systole': [], 'diastole': []}, 
+        'val': {'systole': [], 'diastole': []}}
 
 for i in range(hypers['nb_iter']):
     print('-'*50)
@@ -113,10 +121,17 @@ for i in range(hypers['nb_iter']):
     loss_diastole = hist_diastole.history['loss'][-1]
     val_loss_systole = hist_systole.history['val_loss'][-1]
     val_loss_diastole = hist_diastole.history['val_loss'][-1]
+    # write losses instead of storing them in case code execution has to be stopped
+    with open(os.path.join(save_folder, 'val_loss_all.csv'), mode='a') as cf:
+        f = csv.writer(cf)
+        f.writerow([loss_systole, loss_diastole, val_loss_systole, val_loss_diastole])
 
     # store loss values for: train, val <-> systole, diastole
-    loss['train'].append([loss_systole, loss_diastole])
-    loss['val'].append([val_loss_systole, val_loss_diastole])
+    loss['train']['systole'].append(loss_systole)
+    loss['train']['diastole'].append(loss_diastole)
+    loss['val']['systole'].append(val_loss_systole)
+    loss['val']['diastole'].append(val_loss_diastole)
+
 
     if hypers['calc_crps'] > 0 and i % hypers['calc_crps'] == 0:
         print('Evaluating CRPS...')
@@ -143,11 +158,6 @@ for i in range(hypers['nb_iter']):
         crps_test = crps(cdf_test, np.concatenate((cdf_val_pred_systole, cdf_val_pred_diastole)))
         print('CRPS(test) = {0}'.format(crps_test))
 
-    
-    # create a new folder named after current date and time to save all model parameters and infos regarding the training process
-    if i == 0:
-        os.makedirs(save_folder)
-
     # for best (lowest) val losses, save weights
     if val_loss_systole < min_val_loss_systole:
         print('Systole loss reduced. Saving weights...')
@@ -163,37 +173,17 @@ for i in range(hypers['nb_iter']):
 t_end = time.time()
 t_delta = t_end-t_start
 
-print('Done with training the CNN with {} sets of images. Total time elapsed is {} min.'.format(train_set_size, t_delta/60))
+print('Done with training the CNN with {} sets of images. Total time elapsed is {} min.'.format(hypers['m'], t_delta/60))
 
+# append losses and duration to metadict
+metadict['losses'] = loss
+metadict['duration'] = t_delta
+metadict['hypers']['loss_best'] = {'train': {'systole': np.min(loss['train']['systole']), 'diastole': np.min(loss['train']['diastole'])}, 
+                                    'val': {'systole': np.min(loss['val']['systole']), 'diastole': np.min(loss['val']['diastole'])}}
 
-print('*'*50)
-print('Saving Losses and Hyperparameters.')
-print('*'*50)
-
-# save best (lowest) val losses in readable file (to be later used for generating submission)
-with open(os.path.join(save_folder, 'val_loss_all.txt'), mode='w+') as f:
-    f.write('train-sys\ttrain-dia\tval-sys\tval-dia\n')
-    for i in range(hypers['nb_iter']):
-        f.write('{}\t{}\t{}\t{}\n'.format(loss['train'][i][0], loss['train'][i][1], loss['val'][i][0], loss['val'][i][1]))
-
-# save hyperparameters to readable file
-with open(os.path.join(save_folder, 'hyperparameters.txt'), mode='w+') as g:
-    for key,val in hypers.items():
-        g.write('{}: {}\n'.format(key, val))
-
-# save losses and hyperparameters in json file
-metadict = {'hparms': hypers, 'losses': loss, 'duration': t_delta}
-with open(os.path.join(save_folder, 'metadata.json'), 'w') as jf:
+with open(os.path.join(save_folder, 'metadata.json'), 'w+') as jf:
     json.dump(metadict, jf)
 
-# with h5py.File(os.path.join(save_folder, 'metadata.h5'), 'w') as h:
-#     grp1 = h.create_group('hparms')
-#     for key,val in hypers.items():
-#         grp1.create_dataset(key, data = val)
-#     grp2 = h.create_group('losses')
-#     for key,val in loss.items():
-#         grp2.create_dataset(key, data = val)
-#     grp3 = h.create_group('misc')
-#     grp3.create_dataset('duration', data = t_delta)
+
 
 
