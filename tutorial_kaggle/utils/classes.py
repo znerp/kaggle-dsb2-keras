@@ -92,7 +92,7 @@ class DatasetSAX(object):
             img = zoom(img, np.array(resize_dims)/img.shape)
         elif img.shape[0] < img.shape[1]: # insurance against rotated images; width < height might indicate rotation
             img = img.T
-        print(img.shape)
+        # print(img.shape)
         return np.array(img)
 
     def _read_all_dicom_images(self):
