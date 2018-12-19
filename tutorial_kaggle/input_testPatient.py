@@ -57,7 +57,13 @@ for key,val in attribute_dict.items():
     if key != 'images':
         print(key, val)
 
-#%% Visualization
-print('First image of {} images for patient {}: '.format(tData.images.shape[0]*tData.images.shape[1], tData.name))
-plt.imshow(tData.images[0,0,:,:], cmap = 'bone')
+#%% Visualization of a whole cardiac cycle for one slice
+# print('First image of {} images for patient {}: '.format(tData.images.shape[0]*tData.images.shape[1], tData.name))
+print('First slice out of {} of a cardiac cycle for patient {}: '.format(tData.images.shape[0], tData.name))
+for t in range(tData.images.shape[1]):
+        fig = plt.figure()
+        # a=fig.add_subplot(5,6,t+1)
+        # a.axis('off')
+        plt.imshow(tData.images[3,t,:,:], cmap = 'jet')# cmap='bone'
+        # plt.savefig('test{}.png'.format(t))
 
