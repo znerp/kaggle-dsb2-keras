@@ -1,60 +1,14 @@
 #%%
-import h5py
-import json
+import h5py, json
+# import json
+import csv
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import sys
+sys.path.insert(1, 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\')
+from vis_utils import vis_learning_curve, vis_learning_curve_old, vis_learning_curve_seg
 
-#%%
-def vis_learning_curve(filename, fmt='json', **kwargs):
-    """
-    Visualizes the learning curve: Needs access to losses.
-
-    Parms:
-        filename: path to file that contains the losses and hyperparameters of the learning process
-        fmt: format of the saved file; currently supported: json and h5py
-    """
-
-    # read in file
-    if fmt == 'h5':
-        with h5py.File(filename, 'r') as h:
-            loss_train = h['losses']['train'].value
-            loss_val = h['losses']['val'].value
-            try:
-                lr = h['hparms']['optimizer']['params']['lr'].value
-            except Exception: # old version
-                lr = h['hparms']['lr_alpha'].value
-            epochs = h['hparms']['nb_iter'].value
-            batch_size = h['hparms']['batch_size'].value
-    elif fmt == 'json':
-        with open(filename, 'r') as jf:
-            metadict = json.load(jf)
-            loss_train = np.array(metadict['losses']['train'])
-            loss_val = np.array(metadict['losses']['val'])
-            lr = metadict['hparms']['optimizer']['params']['lr']
-            epochs = metadict['hparms']['nb_iter']
-            batch_size = metadict['hparms']['batch_size']
-    else:
-        raise Exception('Format {} is invalid.'.format(fmt))
-
-    # visualize learning process
-    fig , (ax1, ax2) = plt.subplots(nrows=1, ncols=2)
-
-    fig.suptitle('lr = {}, batch_size = {}'.format(lr, batch_size))
-    ax1.set_title('Systole')
-    l1, = ax1.plot(np.arange(1,epochs+1), loss_train[:,0], 'b-', **kwargs)
-    l2, = ax1.plot(np.arange(1,epochs+1), loss_val[:,0], 'r-', **kwargs)
-    ax1.set_ylabel('Loss')
-    ax1.set_xlabel('Epoch')
-    ax1.legend([l1, l2], ['training', 'validation'])
-
-    ax2.set_title('Diastole')
-    l3, = ax2.plot(np.arange(1,epochs+1), loss_train[:,1], 'b-', **kwargs)
-    l4, = ax2.plot(np.arange(1,epochs+1), loss_val[:,1], 'r-', **kwargs)
-    ax2.set_xlabel('Epoch')
-    ax2.legend([l3, l4], ['training', 'validation'])
-
-    return fig, (ax1, ax2)
 
 
 #%% 
@@ -71,30 +25,105 @@ base_dir = 'C:\\Users\\Znerp\\Documents\\GitHub\\kaggle-dsb2-keras\\training_res
 #     # fig.savefig('..\\..\\figures\\test{}.png'.format(i))
 
 #%% alternatively loop over all folders 
-nSkip = 7 # skip the first nSkip folders
-counter = 1
-print('Skipping the first {} folders.'.format(nSkip))
+# nSkip = 7 # skip the first nSkip folders
+# print('Skipping the first {} folders.'.format(nSkip))
+nOld = 5
+counter = 0
 for _,dirnames,_ in os.walk(base_dir): # only need the directory names
     for dirname in dirnames:
-        if counter <= nSkip:
-            counter += 1
-            print('skip')
+        if dirname == 'segmentation':
+            print('Skipping segmentation folder.')
             continue
-        filepath = os.path.join(base_dir, dirname, 'metadata.json')
-        # print(dirname)
-        try:
-            fig, (ax1, ax2) = vis_learning_curve(filepath)
-        # except Exception as e:
-        except FileNotFoundError as e:
-            print(dirname, e)
-        
+
+        counter += 1
+
+        if counter <= nOld: # old print version + metadata.h5
+            metafile = os.path.join(base_dir, dirname, 'metadata.h5')
+            try:
+                fig, (ax1, ax2) = vis_learning_curve_old(metafile, fmt='h5')
+            except Exception as e:
+                print(dirname, e)
+        elif counter > nOld and counter < 11: # old print version; json
+            metafile = os.path.join(base_dir, dirname, 'metadata.json')
+            # print(dirname)
+            try:
+                fig, (ax1, ax2) = vis_learning_curve_old(metafile)
+            except Exception as e:
+            # except FileNotFoundError as e:
+                print(dirname, e)
+        else: # new version
+            metafile = os.path.join(base_dir, dirname, 'metadata.json')
+            lossfile = os.path.join(base_dir, dirname, 'val_loss_all.csv')
+            try:
+                fig, (ax1, ax2) = vis_learning_curve(metafile, lossfile)
+            except Exception as e:
+                print(dirname, e)
         # fig.savefig('..\\..\\figures\\test{}.png'.format(i))
 
 
-#%% what went wrong with a certain folder?
-f = h5py.File(os.path.join(base_dir, '20181213_0959', 'metadata.h5'), 'r')
-for bla in f.keys():
-    print(bla + ':\n')
-    for blubb in f[bla].keys():
-        print(blubb)
-    print('\n')
+#%% visualization of segmentation training; all in one plot
+seg_dir = os.path.join(base_dir, 'segmentation')
+
+loss_best = []
+Dirnames = []
+for _,dirnames,_ in os.walk(seg_dir):
+    for dirname in dirnames:
+        # Dirnames.append(dirname)
+
+        metafile = os.path.join(seg_dir, dirname, 'metadata.json')
+        lossfile = os.path.join(seg_dir, dirname, 'val_loss_all.txt')
+
+        # try:
+        with open(metafile, 'r') as jf:
+            metadict = json.load(jf)
+            lr = metadict['hparms']['optimizer']['params']['lr']
+            epochs = metadict['hparms']['nb_iter']
+            try:
+                loss_best = metadict['hparms']['loss_best']
+            except KeyError:
+                loss_best = None
+
+        if loss_best != None:
+            plt_tit = 'lr = {}, best loss = {:.4f}'.format(lr, loss_best)
+        else:
+            plt_tit = 'lr = {}, best loss = unknown'.format(lr)
+        fig, ax = vis_learning_curve_seg(lossfile, plt_tit)
+        # except Exception as e:
+            # print(dirname, e)   
+
+
+# for i in range(len(Dirnames)):
+#     print(Dirnames[i], loss_best[i])
+
+
+#%% debugging segmentation visualization
+with open(lossfile, 'r') as csvf:
+    csvr = csv.reader(csvf)
+    loss = []
+    for row in csvr:
+        loss.append(row)
+    loss = np.array([float(x[0]) for x in loss if len(x)!=0]) # filter empty lines
+    print(loss)
+        
+
+# #%% what went wrong with a certain folder?
+# f = h5py.File(os.path.join(base_dir, '20181213_0959', 'metadata.h5'), 'r')
+# for bla in f.keys():
+#     print(bla + ':\n')
+#     for blubb in f[bla].keys():
+#         print(blubb)
+#     print('\n')
+
+# #%% does plotting the title directly work?
+# import numpy as np
+# import matplotlib.pyplot as plt
+
+# plt.plot(np.arange(1,101), np.linspace(2,200,100), title='blubb')
+
+#%%
+fig = plt.figure()
+ax = plt.plot(np.arange(1,100+1), np.linspace(2,200,100))
+print(fig)
+print(type(ax))
+
+#%%
